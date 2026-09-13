@@ -1,0 +1,40 @@
+name: 问题反馈
+description: 报告可复现的故障
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        请勿提交真实配置、数据库、短信、号码、完整卡片或设备身份、二维码、激活码、凭据及原始抓包。
+        涉及安全漏洞时先与维护者约定私有渠道。
+  - type: input
+    id: version
+    attributes:
+      label: KHive 版本
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境
+      description: 操作系统、CPU 架构、模组型号／固件、AT／QMI／MBIM 后端；不要填写完整设备身份。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: 脱敏后的最小诊断信息
+      description: 仅保留相关错误与时间；不要粘贴完整日志或请求。
+      render: text

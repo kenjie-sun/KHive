@@ -1,0 +1,64 @@
+server:
+    debug: false
+    port: "127.0.0.1:8788"
+
+web:
+    username: admin
+    # 首次启动前替换为独立的长随机密码。
+    password: "CHANGE_ME_BEFORE_START"
+
+# 首次启动保持空设备，通过 Web 发现并确认目标后再添加设备。
+# 已验证 CSIM 兼容的 AT 设备可添加 esim_at_csim: true（默认 false，见 README）。
+devices: []
+
+telegram:
+    enabled: false
+    bot_token: ""
+    chat_id: 0
+    base_url: ""
+    proxy: ""
+    admin_id: 0
+
+feishu:
+    enabled: false
+    app_id: ""
+    app_secret: ""
+    chat_ids: []
+
+qq:
+    enabled: false
+    app_id: ""
+    app_secret: ""
+    group_ids: ""
+    direct_ids: ""
+
+webhook:
+    enabled: false
+    urls: []
+    text_template: '{{device_label}} {{text}}'
+    headers: {}
+    secret: ""
+    timeout_ms: 5000
+    retry_max: 3
+
+bark:
+    enabled: false
+    urls: []
+    group: khive
+    icon: ""
+    level: active
+
+email:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 0
+    username: ""
+    password: ""
+    from_address: ""
+    to_addresses: []
+
+pushplus:
+    enabled: false
+    token: ""
+    topic: ""
+    channel: wechat
