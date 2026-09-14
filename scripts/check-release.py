@@ -16,7 +16,15 @@ ALLOWED_ROOTS = {'.github', 'cmd', 'config', 'docs', 'internal', 'pkg', 'scripts
 ALLOWED_FILES = {'.gitignore', 'LICENSE', 'Makefile', 'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'go.mod', 'go.sum'}
 FORBIDDEN_PARTS = {'private', 'backups', 'deployments', 'node_modules', '.local', '.git', 'runtime', 'output', 'dist', 'spike'}
 FORBIDDEN_SUFFIXES = {'.db', '.sqlite', '.sqlite3', '.log', '.pcap', '.pcapng', '.har', '.pem', '.key', '.p12', '.pfx', '.bak', '.backup', '.zip', '.gz', '.tgz', '.pdf', '.exe', '.bin'}
-PUBLIC_IMAGES = {'third_party/sipgo/icons/avero.png', 'third_party/sipgo/icons/babelforce-logo.png', 'third_party/sipgo/icons/icon.png'}
+PUBLIC_IMAGES = {
+    'third_party/sipgo/icons/avero.png',
+    'third_party/sipgo/icons/babelforce-logo.png',
+    'third_party/sipgo/icons/icon.png',
+    # Reviewed application screenshots rendered with synthetic data.
+    'docs/images/devices.png',
+    'docs/images/esim.png',
+    'docs/images/sms.png',
+}
 IMAGE_SUFFIXES = {'.png', '.jpg', '.jpeg', '.webp', '.gif', '.heic'}
 SECRET_RULES = {
     'private-key': re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'),
