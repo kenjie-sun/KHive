@@ -48,7 +48,7 @@ func urcKey(line string) string {
 }
 
 func parseCMTI(line string) (string, string, bool) {
-	s := strings.TrimSpace(line)
+	s := strings.Replace(strings.TrimSpace(line), "+CDSI:", "+CMTI:", 1)
 	if !strings.HasPrefix(s, "+CMTI:") {
 		return "", "", false
 	}
@@ -98,7 +98,7 @@ func (m *Manager) formatURC(line string) urcFormatResult {
 	}
 
 	switch key {
-	case "+CMTI":
+	case "+CMTI", "+CDSI":
 		st, idx, ok := parseCMTI(s)
 		if ok {
 			out.Level = urcLogInfo

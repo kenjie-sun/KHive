@@ -277,7 +277,7 @@ func (w *Worker) processDecodedSMSQMI(sms *qmimanager.DecodedSMS) error {
 	if sms.IsConcat {
 		total, seq = sms.ConcatTotal, sms.ConcatSeq
 	}
-	result, err := db.StoreIncomingSMS(ctx, db.IncomingSMSFragment{IMSI: imsi, DeviceID: w.ID, Sender: sms.Sender, Content: sms.Message, Timestamp: sms.Timestamp, FingerprintInput: identity, Ref: sms.ConcatRef, Total: total, Seq: seq, DCS: -1, Suppress: smsnotify.ShouldSuppressReceivedSMS(sms.Message)})
+	result, err := db.StoreIncomingSMS(ctx, db.IncomingSMSFragment{IMSI: imsi, DeviceID: w.ID, Source: "蜂窝", Sender: sms.Sender, Content: sms.Message, Timestamp: sms.Timestamp, FingerprintInput: identity, Ref: sms.ConcatRef, Total: total, Seq: seq, DCS: -1, Suppress: smsnotify.ShouldSuppressReceivedSMS(sms.Message)})
 	if err != nil {
 		return err
 	}
@@ -365,6 +365,10 @@ func (w *Worker) SendSMS(phone, message string) error {
 }
 
 func (w *Worker) SendSMSWithOptions(phone, message string, opts smscodec.SubmitOptions) error {
+	_, err := w.SendSMSTracked(phone, message, opts)
+	return err
+}
+func (w *Worker) sendSMSWithOptions(phone, message string, opts smscodec.SubmitOptions) error {
 	if w.Backend != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
@@ -450,7 +454,7 @@ func (w *Worker) processSMS(sender, content string, timestamp time.Time) {
 		}
 	}
 	if imsi != "" {
-		if err := db.SaveSMS(imsi, sender, "", content, 1, 0, timestamp); err != nil {
+		if err := db.SaveSMSWithSource(imsi, "", sender, "", content, 1, 0, timestamp, w.ID, "蜂窝"); err != nil {
 			logger.Warn(fmt.Sprintf("[%s] 保存短信到数据库失败", w.ID), "err", err)
 		}
 	}

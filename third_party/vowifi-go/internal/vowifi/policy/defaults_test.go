@@ -2,11 +2,11 @@ package policy
 
 import "testing"
 
-func TestDefaultGiffgaffTemplate(t *testing.T) {
-	tmpl := DefaultGiffgaffTemplate()
+func TestDefaultIMSRegisterTemplate(t *testing.T) {
+	tmpl := DefaultIMSRegisterTemplate()
 
-	if tmpl.ID != "giffgaff" {
-		t.Fatalf("id = %q, want giffgaff", tmpl.ID)
+	if tmpl.ID != "default-ims-register" {
+		t.Fatalf("id = %q, want default-ims-register", tmpl.ID)
 	}
 	if !tmpl.IncludePANIAuthenticated {
 		t.Fatal("expected include_pani_authenticated=true")

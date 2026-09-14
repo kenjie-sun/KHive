@@ -270,6 +270,83 @@ paths:
         '404':
           $ref: '#/components/responses/ErrorMessage'
 
+  /sms/deliveries:
+    get:
+      tags: [sms]
+      summary: 查询会话最近 20 条发送与终端回执
+      description: 使用持久化记录，无需 IMS 正在运行。提交状态与每片 terminal_state 独立。
+      parameters:
+        - in: query
+          name: imsi
+          required: true
+          schema: {type: string}
+        - in: query
+          name: peer
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: 最近发送记录，按创建时间倒序
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SMSTerminalDelivery'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /notifications/deliveries:
+    get:
+      tags: [notifications]
+      summary: 查询最近 100 条短信通知投递
+      parameters:
+        - in: query
+          name: state
+          schema:
+            type: string
+            enum: [pending, sending, retry, failed, sent]
+      responses:
+        '200':
+          description: 投递元数据，不含短信正文与渠道凭据
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  enabled_channels:
+                    type: array
+                    items: {type: string}
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SMSNotificationDelivery'
+        '400':
+          $ref: '#/components/responses/ErrorMessage'
+        '500':
+          $ref: '#/components/responses/ErrorMessage'
+
+  /notifications/deliveries/{id}/retry:
+    post:
+      tags: [notifications]
+      summary: 将失败或等待重试的通知重新排队
+      description: 保留通知 ID，重置尝试次数。已发送与正在发送的记录不可重排。按当前渠道配置继续。
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: 已重新排队
+        '409':
+          $ref: '#/components/responses/ErrorMessage'
+
   /sms/contacts:
     get:
       tags: [sms]
@@ -2204,6 +2281,55 @@ components:
           type: object
           additionalProperties: true
 
+    SMSTerminalDelivery:
+      type: object
+      properties:
+        message_id: {type: string}
+        imsi: {type: string}
+        device_id: {type: string}
+        peer: {type: string}
+        content: {type: string}
+        parts_total: {type: integer}
+        acks: {type: integer}
+        state:
+          type: string
+          description: 提交状态；acked 不表示终端已收到
+          enum: [pending, partial_ack, acked, failed, unconfirmed]
+        created_at: {type: string, format: date-time}
+        parts:
+          type: array
+          items:
+            type: object
+            properties:
+              part_no: {type: integer}
+              state: {type: string}
+              tp_mr: {type: integer, minimum: 0, maximum: 255}
+              tp_status: {type: integer, minimum: 0, maximum: 255}
+              terminal_state:
+                type: string
+                description: 空值表示未请求终端回执；仅 delivered 证明终端收到
+                enum: ['', pending, delivered, completed, temporary_failure, failed, unknown]
+              terminal_report_at: {type: string, format: date-time}
+
+    SMSNotificationDelivery:
+      type: object
+      properties:
+        id: {type: string}
+        sms_id: {type: integer}
+        channel: {type: string}
+        device_id: {type: string}
+        source: {type: string}
+        sender: {type: string}
+        timestamp: {type: string, format: date-time}
+        state:
+          type: string
+          enum: [pending, sending, retry, failed, sent]
+        attempts: {type: integer}
+        next_attempt_at: {type: string, format: date-time}
+        last_error: {type: string}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+
     SMSMessage:
       type: object
       properties:
@@ -2972,6 +3098,14 @@ components:
           type: boolean
         udp_associate_ok:
           type: boolean
+        udp_exchange_ok:
+          type: boolean
+          description: 已验证 SOCKS5 封装下的真实 DNS UDP 往返
+        dns_target:
+          type: string
+        dns_rcode:
+          type: integer
+          description: 仅 udp_exchange_ok 为 true 时有意义
         auth_method:
           type: string
         relay_addr:

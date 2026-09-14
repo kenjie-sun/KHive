@@ -576,6 +576,7 @@ func (p *Pool) AddWorkerFromConfig(devCfg config.DeviceConfig) (*Worker, error) 
 		m.SetNewSMSHandler(nil)
 		m.SetDisableURCRead(false)
 		m.SetPDUCallback(w.persistIncomingPDUHex)
+		m.SetSMSReportCallbackFactory(w.snapshotSMSReportCallback)
 		m.SetSMSCallback(func(sender, content string, timestamp time.Time) {
 			w.processSMS(sender, content, timestamp)
 		})

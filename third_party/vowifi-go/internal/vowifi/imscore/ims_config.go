@@ -94,7 +94,7 @@ func IMSConfigFromVoice(v voiceclient.Config, template policy.IMSRegisterTemplat
 		cfg.CarrierPresetID = "3gpp-default"
 	}
 	if strings.TrimSpace(cfg.IMSRegisterTemplate.ID) == "" {
-		cfg.IMSRegisterTemplate = policy.DefaultGiffgaffTemplate()
+		cfg.IMSRegisterTemplate = policy.DefaultIMSRegisterTemplate()
 	}
 	return cfg
 }
@@ -130,7 +130,7 @@ func internalConfigFromIMS(ims IMSConfig, in StartSessionInput) Config {
 		cfg.UserAgent = "SimAdmin VoWiFi"
 	}
 	if strings.TrimSpace(cfg.Template.ID) == "" {
-		cfg.Template = policy.DefaultGiffgaffTemplate()
+		cfg.Template = policy.DefaultIMSRegisterTemplate()
 	}
 	return cfg
 }

@@ -42,6 +42,12 @@ func persistIncomingTPDU(ctx context.Context, pool *Pool, deviceID, imsi string,
 	if err != nil {
 		return fmt.Errorf("%w: %v", errInvalidIncomingPDU, err)
 	}
+	if decoded.SmsType() == tpdu.SmsStatusReport {
+		if decoded.FirstOctet.SRQ() {
+			return nil
+		} // A command report is not a SUBMIT report.
+		return db.StoreSMSStatusReport(ctx, db.SMSStatusReport{IMSI: imsi, Peer: decoded.RA.Number(), TPMR: int(decoded.MR), Status: int(decoded.ST), ServiceCentreAt: decoded.SCTS.Time, DischargedAt: decoded.DT.Time}, raw)
+	}
 	if decoded.SmsType() != tpdu.SmsDeliver {
 		return errInvalidIncomingPDU
 	}
@@ -49,7 +55,7 @@ func persistIncomingTPDU(ctx context.Context, pool *Pool, deviceID, imsi string,
 	if err != nil {
 		return fmt.Errorf("%w: %v", errInvalidIncomingPDU, err)
 	}
-	result, err := db.StoreIncomingSMS(ctx, db.IncomingSMSFragment{IMSI: imsi, DeviceID: deviceID, Sender: sender, Content: text, TPDU: raw, Timestamp: at, Ref: concat.Ref, RefBits: concat.RefBits, Total: concat.Total, Seq: concat.Seq, DCS: int(decoded.DCS), Suppress: smsnotify.ShouldSuppressReceivedSMS(text)})
+	result, err := db.StoreIncomingSMS(ctx, db.IncomingSMSFragment{IMSI: imsi, DeviceID: deviceID, Source: source, Sender: sender, Content: text, TPDU: raw, Timestamp: at, Ref: concat.Ref, RefBits: concat.RefBits, Total: concat.Total, Seq: concat.Seq, DCS: int(decoded.DCS), Suppress: smsnotify.ShouldSuppressReceivedSMS(text)})
 	if err != nil {
 		return err
 	}

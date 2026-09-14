@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/1239t/vohive/internal/db"
+	"github.com/1239t/vohive/pkg/smscodec"
 	"github.com/1239t/vowifi-go/engine/sim"
 	"github.com/1239t/vowifi-go/runtimehost/messaging"
 	"github.com/1239t/vowifi-go/runtimehost/voiceclient"
@@ -71,8 +72,12 @@ func TestKHiveOutgoingSMSRealStoreEarlyReportAndPartialFailure(t *testing.T) {
 	defer c.Close(context.Background())
 	outcomes := make(chan messaging.SendOutcome, 1)
 	errs := make(chan error, 1)
+	tpdus, _, err := smscodec.BuildSubmitTPDUs("+1234", "test part")
+	if err != nil {
+		t.Fatal(err)
+	}
 	go func() {
-		out, err := c.SendSMS(ctx, "+1234", "two parts", []messaging.SMSPart{{TargetURI: "tel:+999", RPMR: 41, Body: []byte{0, 41}}, {TargetURI: "tel:+999", RPMR: 42, Body: []byte{0, 42}}})
+		out, err := c.SendSMS(ctx, "+1234", "two parts", []messaging.SMSPart{{TargetURI: "tel:+999", RPMR: 41, Body: smscodec.BuildRPData(41, tpdus[0], "+999")}, {TargetURI: "tel:+999", RPMR: 42, Body: smscodec.BuildRPData(42, tpdus[0], "+999")}})
 		outcomes <- out
 		errs <- err
 	}()

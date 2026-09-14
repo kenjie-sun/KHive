@@ -1,10 +1,13 @@
 package notify
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/1239t/vohive/internal/config"
@@ -15,8 +18,12 @@ import (
 // Manager 统一通知管理器
 // 持有多个 Channel 实例，向所有已启用渠道广播通知和命令
 type Manager struct {
-	pool     *device.Pool
-	channels []Channel // 所有已启用的通知渠道
+	lifecycleMu  sync.Mutex
+	channelsMu   sync.RWMutex
+	pool         *device.Pool
+	channels     []Channel // 所有已启用的通知渠道
+	durable      atomic.Bool
+	outboxCancel context.CancelFunc
 }
 
 type NotificationContext struct {
@@ -58,11 +65,15 @@ func NewManager(cfg *config.Config, pool *device.Pool) (*Manager, error) {
 		return nil, err
 	}
 
+	ConfigureSMSOutbox(cfg)
+	m.startOutbox()
 	return m, nil
 }
 
 // initChannels 根据配置创建并启动所有通知渠道
 func (m *Manager) initChannels(cfg *config.Config) error {
+	m.channelsMu.Lock()
+	defer m.channelsMu.Unlock()
 	m.channels = nil
 
 	// Telegram 渠道
@@ -187,19 +198,34 @@ func (m *Manager) registerCommands() {
 
 // Close 关闭所有通知渠道
 func (m *Manager) Close() {
-	for _, ch := range m.channels {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
+	m.closeChannels()
+}
+func (m *Manager) closeChannels() {
+	if m.outboxCancel != nil {
+		m.outboxCancel()
+		m.outboxCancel = nil
+	}
+	for _, ch := range m.channelSnapshot() {
 		_ = ch.Close()
 	}
 }
 
 // UpdateConfig 重新加载通知配置（热更新）
 func (m *Manager) UpdateConfig(cfg *config.Config) error {
+	m.lifecycleMu.Lock()
+	defer m.lifecycleMu.Unlock()
 	// 关闭现有渠道
-	m.Close()
-	m.channels = nil
+	m.closeChannels()
 
 	// 重新初始化所有渠道
-	return m.initChannels(cfg)
+	if err := m.initChannels(cfg); err != nil {
+		return err
+	}
+	ConfigureSMSOutbox(cfg)
+	m.startOutbox()
+	return nil
 }
 
 // NotifySMS 实现 device.Notifier 接口 — 收到短信通知
@@ -208,6 +234,10 @@ func (m *Manager) NotifySMS(deviceID, sender, content string, timestamp time.Tim
 }
 
 func (m *Manager) NotifySMSWithSource(deviceID, sender, content, source string, timestamp time.Time) {
+	// Production receipts are already queued in the SMS database transaction.
+	if m.durable.Load() {
+		return
+	}
 	source = strings.TrimSpace(source)
 	if source == "" {
 		source = "蜂窝"
@@ -222,7 +252,7 @@ func (m *Manager) NotifySMSWithSource(deviceID, sender, content, source string, 
 		"notification_id", id,
 		"sms_device", deviceID,
 		"source", source,
-		"channel_count", len(m.channels))
+		"channel_count", len(m.channelSnapshot()))
 
 	m.broadcastWithContext(NotificationContext{
 		NotificationID: id,
@@ -263,14 +293,14 @@ func (m *Manager) NotifyIPRotated(deviceID, oldIP, newIP string, duration time.D
 
 // NotifyIncomingCall 实现 voice.CallNotifier 接口 — 来电通知
 func (m *Manager) NotifyIncomingCall(deviceID, caller, callee string) {
-	if len(m.channels) == 0 {
+	if len(m.channelSnapshot()) == 0 {
 		return
 	}
 
 	msg := fmt.Sprintf("来电通知\n设备    %s\n主叫    %s\n被叫    %s",
 		deviceID, caller, callee)
 
-	logger.Info("开始发送来电通知", "device", deviceID, "caller", caller, "channel_count", len(m.channels))
+	logger.Info("开始发送来电通知", "device", deviceID, "caller", caller, "channel_count", len(m.channelSnapshot()))
 
 	m.broadcastWithContext(NotificationContext{
 		Event:      "incoming_call",
@@ -304,7 +334,7 @@ func (m *Manager) broadcastWithContext(ctx NotificationContext) {
 		ctx.Event = "notification"
 	}
 
-	for _, ch := range m.channels {
+	for _, ch := range m.channelSnapshot() {
 		ch := ch // capture variable
 		go func() {
 			var err error
@@ -324,9 +354,15 @@ func (m *Manager) broadcastWithContext(ctx NotificationContext) {
 
 // GetChannelNames 返回所有已启用渠道的名称列表
 func (m *Manager) GetChannelNames() []string {
-	names := make([]string, 0, len(m.channels))
-	for _, ch := range m.channels {
+	names := make([]string, 0, len(m.channelSnapshot()))
+	for _, ch := range m.channelSnapshot() {
 		names = append(names, ch.Name())
 	}
 	return names
+}
+
+func (m *Manager) channelSnapshot() []Channel {
+	m.channelsMu.RLock()
+	defer m.channelsMu.RUnlock()
+	return append([]Channel(nil), m.channels...)
 }

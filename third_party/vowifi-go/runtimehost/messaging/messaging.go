@@ -52,19 +52,23 @@ type DeliveryPartMatch struct {
 }
 
 type DeliveryPartStatus struct {
-	PartNo      int
-	CallID      string
-	InReplyTo   string
-	RPMR        int
-	State       string
-	SIPCode     int
-	RPCause     int
-	RPCauseText string
-	ErrorText   string
-	SentAt      time.Time
-	ReportAt    *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	TPMR             *int
+	TPStatus         *int
+	TerminalState    string
+	TerminalReportAt *time.Time
+	PartNo           int
+	CallID           string
+	InReplyTo        string
+	RPMR             int
+	State            string
+	SIPCode          int
+	RPCause          int
+	RPCauseText      string
+	ErrorText        string
+	SentAt           time.Time
+	ReportAt         *time.Time
+	CreatedAt        time.Time
+	UpdatedAt        time.Time
 }
 
 type DeliveryStatus struct {
@@ -113,4 +117,10 @@ func WithSuppressSendTGSuccess(ctx context.Context) context.Context { return ctx
 // failures return an error so the SIP transaction remains retryable.
 type IncomingSMSReceiver interface {
 	ReceiveSMS(context.Context, string, string, []byte) ([]byte, error)
+}
+
+// TerminalSubmitPreparer records a TP reference and requests terminal reports before send.
+// It is optional for hosts implementing only RP submission tracking.
+type TerminalSubmitPreparer interface {
+	PrepareSMSTerminalSubmit(messageID string, partNo int, body []byte) ([]byte, error)
 }

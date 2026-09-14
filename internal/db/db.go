@@ -157,7 +157,9 @@ func Init(dbPath string) error {
 		&SMSContact{},
 		&SMSDelivery{},
 		&SMSDeliveryPart{},
+		&SMSStatusReport{},
 		&SMSIncomingPart{},
+		&SMSNotification{},
 		&TrafficMinute{},
 		&TrafficHour{},
 		&TrafficDay{},
@@ -711,6 +713,10 @@ func HasDuplicateReceivedSMS(imsi, localPhone, sender, recipient, content string
 // SaveSMSWithLocalPhone 保存短信记录并显式写入本机号码。
 // localPhone 为空时会按方向自动推导，并在必要时回退到订阅手机号。
 func SaveSMSWithLocalPhone(imsi, localPhone, sender, recipient, content string, smsType, status int, timestamp time.Time) error {
+	return SaveSMSWithSource(imsi, localPhone, sender, recipient, content, smsType, status, timestamp, "", "")
+}
+
+func SaveSMSWithSource(imsi, localPhone, sender, recipient, content string, smsType, status int, timestamp time.Time, deviceID, source string) error {
 	if DB == nil {
 		return nil
 	}
@@ -736,6 +742,9 @@ func SaveSMSWithLocalPhone(imsi, localPhone, sender, recipient, content string, 
 	}
 	return DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&sms).Error; err != nil {
+			return err
+		}
+		if err := enqueueSMSNotifications(tx, sms, deviceID, source); err != nil {
 			return err
 		}
 		if peer == "" {

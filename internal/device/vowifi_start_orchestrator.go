@@ -223,6 +223,7 @@ func (p *Pool) prepareVoWiFiStartContext(deviceID, traceID, runtimeEPDGOverride 
 		"device", deviceID,
 		"matched_plmn", prepared.EffectiveCarrier.MCC+"/"+prepared.EffectiveCarrier.MNC,
 		"preset_id", prepared.EffectiveCarrier.PresetID,
+		"match_source", prepared.EffectiveCarrier.MatchSource,
 		"epdg_source", prepared.EPDGSource,
 		"epdg", prepared.EPDGAddr,
 		"identity_source", prepared.IdentityIMEISource,
@@ -238,7 +239,7 @@ func (p *Pool) prepareVoWiFiStartContext(deviceID, traceID, runtimeEPDGOverride 
 	if !alreadyInFlightForCell {
 		waitVoWiFiServingCellID(p.ctx, w, 12*time.Second)
 	}
-	cellSuffix, cellSource := resolveVoWiFiIMSUTRANCellID(p.ctx, w, startProfile.MCC, startProfile.MNC)
+	cellSuffix, cellSource := resolveVoWiFiIMSUTRANCellID(p.ctx, w, startProfile.MCC, startProfile.MNC, prepared.CarrierPreset)
 	startCtx.CellID = cellSuffix
 	switch cellSource {
 	case "qmi":
@@ -265,7 +266,7 @@ func (p *Pool) prepareVoWiFiStartContext(deviceID, traceID, runtimeEPDGOverride 
 			"device", deviceID)
 	}
 
-	if regOpts := carrier.ResolveIMSRegisterProfile(startProfile.MCC, startProfile.MNC); strings.TrimSpace(regOpts.Profile.ContactFeatures) != "" {
+	if regOpts := carrier.ResolveIMSRegisterProfile(startProfile.MCC, startProfile.MNC, prepared.CarrierPreset); strings.TrimSpace(regOpts.Profile.ContactFeatures) != "" {
 		startCtx.RegisterProfile = regOpts.Profile
 		startCtx.SIPInstanceURN = regOpts.SIPInstanceURN
 		startCtx.RegisterExpiry = regOpts.RegisterExpiry
@@ -277,7 +278,7 @@ func (p *Pool) prepareVoWiFiStartContext(deviceID, traceID, runtimeEPDGOverride 
 			"sip_instance", regOpts.SIPInstanceURN,
 			"register_expires", int(regOpts.RegisterExpiry.Seconds()))
 	}
-	if pcscfOverride := carrier.ResolveIMSPcscfAddr(startProfile.MCC, startProfile.MNC); pcscfOverride != "" {
+	if pcscfOverride := carrier.ResolveIMSPcscfAddr(startProfile.MCC, startProfile.MNC, prepared.CarrierPreset); pcscfOverride != "" {
 		startCtx.PCSCFAddr = pcscfOverride
 		logger.Info("VoWiFi 使用运营商 P-CSCF 覆盖",
 			"trace_id", traceID,

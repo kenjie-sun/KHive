@@ -670,7 +670,7 @@ func (i *Instance) runStagedPipeline(ctx context.Context, req StartRequest) {
 	if i.registerExpiry > 0 {
 		voiceCfg.RegisterExpiry = i.registerExpiry
 	}
-	imsTemplate := policy.DefaultGiffgaffTemplate()
+	imsTemplate := policy.DefaultIMSRegisterTemplate()
 	if strings.TrimSpace(voiceCfg.RegisterProfile.UserAgent) == "" {
 		voiceCfg.RegisterProfile.UserAgent = "SimAdmin VoWiFi"
 	}

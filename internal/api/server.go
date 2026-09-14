@@ -239,8 +239,11 @@ func (s *Server) newRouter() *gin.Engine {
 		api.GET("/health", s.handleHealth)                          // 健康检查（外部监控用）
 		api.GET("/traffic/analysis", s.handleTrafficAnalysis)       // 流量分析统计
 
+		api.GET("/notifications/deliveries", s.handleNotificationDeliveries)
+		api.POST("/notifications/deliveries/:id/retry", s.handleRetryNotificationDelivery)
 		// ===== 短信 =====
-		api.POST("/sms/send", s.handleSendSMS)                    // 发送短信（自动选择 AT 或 VoWiFi）
+		api.POST("/sms/send", s.handleSendSMS) // 发送短信（自动选择 AT 或 VoWiFi）
+		api.GET("/sms/deliveries", s.handleSMSTerminalDeliveries)
 		api.GET("/sms/delivery/:message_id", s.handleSMSDelivery) // 查询发送投递状态
 		api.GET("/sms/contacts", s.handleGetSMSContacts)          // 获取短信联系人列表
 		api.GET("/sms/thread", s.handleGetSMSThread)              // 获取与某联系人的短信会话
@@ -1156,7 +1159,15 @@ func (s *Server) handleSendSMS(c *gin.Context) {
 		}
 	} else {
 		// 普通模式使用 AT 发送
-		if err := worker.SendSMSWithOptions(req.Phone, req.Message, sendOpts); err != nil {
+		outcome, sendErr := worker.SendSMSTracked(req.Phone, req.Message, sendOpts)
+		messageID = outcome.MessageID
+		if outcome.PartsTotal > 0 {
+			partsTotal = outcome.PartsTotal
+		}
+		if outcome.DeliveryState != "" {
+			deliveryState = outcome.DeliveryState
+		}
+		if err := sendErr; err != nil {
 			// 发送失败，入库记录（status=3）
 			if imsi != "" {
 				_ = db.SaveSMS(imsi, worker.ID, req.Phone, req.Message, 2, 3, time.Now())
@@ -1192,23 +1203,12 @@ func (s *Server) handleSMSDelivery(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"status": "error", "message": "message_id 不能为空"})
 		return
 	}
-	if s.pool == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "服务未就绪"})
+	status, err := (device.SMSDeliveryReader{}).GetSMSDeliveryStatus(messageID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "未找到对应短信投递记录"})
 		return
 	}
-	services := s.pool.GetAllVoWiFiApps()
-	for _, svc := range services {
-		if svc == nil {
-			continue
-		}
-		status, err := svc.GetSMSDeliveryStatus(messageID)
-		if err != nil {
-			continue
-		}
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "delivery": status})
-		return
-	}
-	c.JSON(http.StatusNotFound, gin.H{"status": "error", "message": "未找到对应短信投递记录"})
+	c.JSON(http.StatusOK, gin.H{"status": "ok", "delivery": status})
 }
 
 func (s *Server) handleVoWiFiSMSStatus(c *gin.Context) {

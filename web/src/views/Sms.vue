@@ -7,6 +7,7 @@ import { useSMSStore } from '../stores/sms'
 import { usePollingScheduler } from '../composables/usePollingScheduler'
 import { toAppError } from '../services/http'
 import type { SmsThreadQueryParams } from '../services/sms'
+import SmsDeliveryReports from '../components/SmsDeliveryReports.vue'
 import PageHeader from '../components/PageHeader.vue'
 import EmptyState from '../components/EmptyState.vue'
 import ErrorState from '../components/ErrorState.vue'
@@ -138,6 +139,7 @@ const showDetailPane = computed(() => !isNarrowLayout.value || !!selectedThreadK
 
 const showSendModal = ref(false)
 const sending = ref(false)
+const deliveryRevision = ref(0)
 const deletingMessageId = ref<number | null>(null)
 const deletingThreadKey = ref<string | null>(null)
 const supportsHover = ref(false)
@@ -612,6 +614,7 @@ async function handleSendModal() {
     ElMessage.error('发送失败：' + (err.message || '未知错误'))
   } finally {
     sending.value = false
+    deliveryRevision.value++
   }
 }
 
@@ -644,6 +647,7 @@ async function sendToCurrentThread() {
     ElMessage.error('发送失败：' + (err.message || '未知错误'))
   } finally {
     sending.value = false
+    deliveryRevision.value++
   }
 }
 
@@ -959,6 +963,7 @@ async function confirmDeleteThread(thread: SmsThread) {
             </div>
           </div>
 
+          <SmsDeliveryReports v-if="selectedThread" :imsi="selectedThread.imsi" :peer="selectedThread.peer" :revision="deliveryRevision" />
           <div v-if="selectedThread" class="p-4 border-t border-gray-100 dark:border-white/10">
             <div class="text-[11px] text-gray-400 text-left mb-2">
               {{ composerEstimate.encoding }} · 预计 {{ composerEstimate.parts }} 段 · {{ composerLen }} 字

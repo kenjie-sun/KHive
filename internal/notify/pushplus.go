@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/1239t/vohive/internal/config"
 	"github.com/1239t/vohive/pkg/logger"
@@ -59,7 +60,7 @@ func (c *PushplusChannel) SendWithContext(ctx NotificationContext) error {
 		return err
 	}
 
-	resp, err := http.Post("http://www.pushplus.plus/send", "application/json", bytes.NewReader(body))
+	resp, err := (&http.Client{Timeout: 30 * time.Second}).Post("http://www.pushplus.plus/send", "application/json", bytes.NewReader(body))
 	if err != nil {
 		logger.Warn("Pushplus 发送失败", "err", err)
 		return err

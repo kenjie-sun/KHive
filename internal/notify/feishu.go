@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/1239t/vohive/internal/config"
 	"github.com/1239t/vohive/pkg/logger"
@@ -117,7 +118,9 @@ func (f *FeishuChannel) Send(text string) error {
 				Build()).
 			Build()
 
-		resp, err := f.client.Im.Message.Create(context.Background(), req)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		resp, err := f.client.Im.Message.Create(ctx, req)
+		cancel()
 		if err != nil {
 			logger.Error("发送飞书消息失败", "chat_id", chatID, "err", err)
 			lastErr = err

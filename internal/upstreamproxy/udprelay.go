@@ -155,7 +155,7 @@ func StartUDPRelay(ctx context.Context, cfg UDPRelayConfig) (*UDPRelay, error) {
 		ctrl.Close()
 		return nil, fmt.Errorf("upstreamproxy: socks5 handshake: %w", err)
 	}
-	relayAddr, err := probeUDPAssociate(ctrl)
+	relayAddr, err := probeUDPAssociate(ctrl, ctx)
 	if err != nil {
 		ctrl.Close()
 		return nil, fmt.Errorf("upstreamproxy: socks5 udp associate: %w", err)

@@ -4,10 +4,11 @@ import (
 	"context"
 	"strings"
 	"sync"
+	"time"
 
-	qqbot "github.com/iniwex5/qqbot"
 	"github.com/1239t/vohive/internal/config"
 	"github.com/1239t/vohive/pkg/logger"
+	qqbot "github.com/iniwex5/qqbot"
 )
 
 type qqApp interface {
@@ -91,11 +92,13 @@ func (q *QQChannel) Send(text string) error {
 
 	var lastErr error
 	for _, recipient := range recipients {
-		_, err := q.app.Send(context.Background(), qqbot.Delivery{
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_, err := q.app.Send(ctx, qqbot.Delivery{
 			To:   recipient,
 			Kind: qqbot.PlainText,
 			Body: text,
 		})
+		cancel()
 		if err != nil {
 			lastErr = err
 			logger.Warn("发送 QQ 消息失败", "recipient", recipient.ID, "kind", recipient.Kind, "err", err)

@@ -12,6 +12,12 @@ import argparse, datetime, json, os, pathlib, re, shlex, subprocess, sys, tempfi
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 TAGS = 'with_utls,nomsgpack'
 CHECKS = {
+    'db': r'^Test(NotificationOutbox|KHiveTerminal)',
+    'upstreamproxy': r'^Test(Probe|KHiveProbe)',
+    'notify': r'^Test',
+    'carrier': r'^TestKHive',
+    'identity': r'^Test',
+    'e911': r'^Test(SetupAvailable|KHive)',
     'config': r'^TestKHive',
     'modem': r'^TestKHive',
     'esim': r'^Test(KHive|SwitchProfile|Clone|Delete|Download|BuildSpaceDelta|FindDelete|FindNotification|ResolveDownload|ResolveDelete|ClassifyDownload|SafeListNotification|RecoverDownload|RetryNotification|ListNotifications)',
@@ -19,6 +25,7 @@ CHECKS = {
     'device': r'^Test(KHive|HandleESIMSwitch|NewESIMManagerForWorker|RestoreRadio|RefreshPostSwitchIdentity|ConvergePostSwitch|.*CardPolicy|VoWiFiToggleCycle)',
     'api': r'^Test(Esim|FormatEsim|WriteEsim|HandleEsim|KHive|.*CardPolicy|VoWiFiToggleCycle|OverviewStreamEmitVersion|OverviewDisplayConfig)',
 }
+PACKAGES = {'carrier': 'github.com/1239t/vowifi-go/runtimehost/carrier', 'identity': 'github.com/1239t/vowifi-go/runtimehost/identity'}
 FRONTEND = ['cardPolicyState.test.ts', 'deviceEsimProgress.test.ts', 'deviceEsimOptimistic.test.ts', 'deviceEsimOperationNotice.test.ts', 'deviceEsimQr.test.ts']
 
 
@@ -27,7 +34,12 @@ def main():
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument('--ssh', metavar='HOST', help='explicit, configured Linux SSH target')
     target.add_argument('--local', action='store_true', help='isolated tests on this Linux host; requires root')
+    parser.add_argument('--checks', help='comma-separated package names for focused reruns')
     args = parser.parse_args()
+    selected = args.checks.split(',') if args.checks else list(CHECKS)
+    if not selected or any(name not in CHECKS for name in selected):
+        parser.error('unknown check; choose from: ' + ','.join(CHECKS))
+    checks = {name: CHECKS[name] for name in selected}
     if args.ssh and not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_.@-]*', args.ssh):
         parser.error('use an SSH host/alias, not shell options')
     if args.local and (sys.platform != 'linux' or os.geteuid() != 0):
@@ -61,7 +73,7 @@ def main():
     env = os.environ.copy()
     env.update(GOWORK='off', GOOS='linux', GOARCH='amd64', CGO_ENABLED='0')
     remote_dir = None
-    files = ['runner'] + [name + '.test' for name in CHECKS]
+    files = ['runner'] + [name + '.test' for name in checks]
     try:
         if args.ssh:
             info = run('target', remote('uname -s; uname -m; id -u'))
@@ -78,8 +90,8 @@ def main():
         with tempfile.TemporaryDirectory(prefix='khive-regression-', dir=logdir) as build:
             builddir = pathlib.Path(build)
             run('build-runner', ['go', 'build', '-mod=readonly', '-o', str(builddir / 'runner'), 'scripts/linux-unit-runner.go'], env)
-            for name in CHECKS:
-                run('build-' + name, ['go', 'test', '-mod=readonly', '-tags', TAGS, '-c', '-o', str(builddir / (name + '.test')), './internal/' + name], env)
+            for name in checks:
+                run('build-' + name, ['go', 'test', '-mod=readonly', '-tags', TAGS, '-c', '-o', str(builddir / (name + '.test')), PACKAGES.get(name, './internal/' + name)], env)
             if args.ssh:
                 remote_dir = subprocess.check_output(remote('umask 022; mktemp -d /tmp/khive-regression.XXXXXXXX'), text=True).strip()
                 if not re.fullmatch(r'/tmp/khive-regression\.[A-Za-z0-9]+', remote_dir):
@@ -98,11 +110,12 @@ def main():
                     shutil.copy2(builddir / name, pathlib.Path(remote_dir) / name)
                     os.chmod(pathlib.Path(remote_dir) / name, 0o755)
                 execution_dir = remote_dir
-            for name, pattern in CHECKS.items():
+            for name, pattern in checks.items():
                 command = [execution_dir + '/runner', execution_dir + '/' + name + '.test', '-test.run=' + pattern, '-test.v', '-test.timeout=120s']
                 run(name + '-isolated', remote(shlex.join(command)) if args.ssh else command)
-            command = [execution_dir + '/ecm.test', '-test.run=^TestECMIsolatedRouteOwnership$', '-test.v', '-test.timeout=30s']
-            run('ecm-kernel-isolated', remote(shlex.join(command)) if args.ssh else command)
+            if 'ecm' in checks:
+                command = [execution_dir + '/ecm.test', '-test.run=^TestECMIsolatedRouteOwnership$', '-test.v', '-test.timeout=30s']
+                run('ecm-kernel-isolated', remote(shlex.join(command)) if args.ssh else command)
     finally:
         cleanup_ok = True
         if remote_dir:

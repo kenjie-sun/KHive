@@ -10,12 +10,14 @@ import (
 )
 
 func TestProbeSOCKS5Success(t *testing.T) {
+	relay := startDNSProbeRelay(t, "udp4", "127.0.0.1:0", false)
 	addr := startProbeServer(t, func(conn net.Conn) {
 		defer conn.Close()
 		readBytes(t, conn, 3)
 		writeBytes(t, conn, []byte{0x05, 0x00})
 		readBytes(t, conn, 10)
-		writeBytes(t, conn, []byte{0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, 0x17, 0x70})
+		writeBytes(t, conn, []byte{0x05, 0x00, 0x00, 0x01, 127, 0, 0, 1, byte(relay.Port >> 8), byte(relay.Port)})
+		_, _ = io.Copy(io.Discard, conn)
 	})
 
 	result, err := ProbeSOCKS5(context.Background(), ProbeConfig{
@@ -80,6 +82,7 @@ func TestProbeSOCKS5UDPAssociateEOF(t *testing.T) {
 }
 
 func TestProbeSOCKS5UsesIPv6UDPAssociateForIPv6Proxy(t *testing.T) {
+	relay := startDNSProbeRelay(t, "udp6", "[::1]:0", false)
 	atypCh := make(chan byte, 1)
 	addr := startProbeServerOn(t, "tcp6", "[::1]:0", func(conn net.Conn) {
 		defer conn.Close()
@@ -102,8 +105,9 @@ func TestProbeSOCKS5UsesIPv6UDPAssociateForIPv6Proxy(t *testing.T) {
 		resp[1] = socks5ReplySuccess
 		resp[3] = socks5AtypIPv6
 		copy(resp[4:20], net.IPv6loopback.To16())
-		binary.BigEndian.PutUint16(resp[20:], 6000)
+		binary.BigEndian.PutUint16(resp[20:], uint16(relay.Port))
 		writeBytes(t, conn, resp)
+		_, _ = io.Copy(io.Discard, conn)
 	})
 
 	result, err := ProbeSOCKS5(context.Background(), ProbeConfig{
@@ -163,5 +167,46 @@ func writeBytes(t *testing.T, w io.Writer, payload []byte) {
 	t.Helper()
 	if _, err := w.Write(payload); err != nil {
 		t.Fatalf("write failed: %v", err)
+	}
+}
+
+func startDNSProbeRelay(t *testing.T, network, address string, drop bool) *net.UDPAddr {
+	t.Helper()
+	conn, err := net.ListenPacket(network, address)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	go func() {
+		buffer := make([]byte, 4096)
+		for {
+			n, source, err := conn.ReadFrom(buffer)
+			if err != nil {
+				return
+			}
+			if drop || n < 22 {
+				continue
+			}
+			packet := append([]byte(nil), buffer[:n]...)
+			packet[12] |= 0x80 // DNS QR, after the IPv4 SOCKS5 UDP header.
+			_, _ = conn.WriteTo(packet, source)
+		}
+	}()
+	return conn.LocalAddr().(*net.UDPAddr)
+}
+
+func TestProbeRejectsUDPAssociateWithoutData(t *testing.T) {
+	relay := startDNSProbeRelay(t, "udp4", "127.0.0.1:0", true)
+	address := startProbeServer(t, func(conn net.Conn) {
+		defer conn.Close()
+		readBytes(t, conn, 3)
+		writeBytes(t, conn, []byte{5, 0})
+		readBytes(t, conn, 10)
+		writeBytes(t, conn, []byte{5, 0, 0, 1, 0, 0, 0, 0, byte(relay.Port >> 8), byte(relay.Port)})
+		_, _ = io.Copy(io.Discard, conn)
+	})
+	result, err := ProbeSOCKS5(context.Background(), ProbeConfig{ProxyAddr: address, Timeout: 100 * time.Millisecond})
+	if err == nil || result.OK() || !result.UDPAssociateOK || result.UDPExchangeOK || result.Stage != ProbeStageUDPExchange {
+		t.Fatalf("unexpected result: %+v, %v", result, err)
 	}
 }

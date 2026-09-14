@@ -30,11 +30,12 @@ type Identity struct {
 }
 
 type Profile struct {
-	IMSI string
-	MCC  string
-	MNC  string
-	IMEI string
-	SMSC string
+	ICCID, SPN, GID1, GID2 string
+	IMSI                   string
+	MCC                    string
+	MNC                    string
+	IMEI                   string
+	SMSC                   string
 }
 
 const (
@@ -63,12 +64,14 @@ type IMSIdentityInfo struct {
 }
 
 type EffectiveCarrierInfo struct {
-	MCC      string
-	MNC      string
-	PresetID string
+	MatchSource string
+	MCC         string
+	MNC         string
+	PresetID    string
 }
 
 type PreparedSession struct {
+	CarrierPreset      carrier.Preset
 	Profile            Profile
 	EffectiveCarrier   EffectiveCarrierInfo
 	EPDGSource         string
@@ -236,14 +239,22 @@ func PrepareStart(input PrepareStartInput) (PreparedSession, error) {
 		return PreparedSession{}, err
 	}
 
-	cfg := carrier.ResolveEffectiveCarrierConfig(carrier.EffectiveCarrierConfigInput{MCC: mcc, MNC: mnc})
+	cfg := carrier.ResolveEffectiveCarrierConfig(carrier.EffectiveCarrierConfigInput{MCC: mcc, MNC: mnc, IMSI: imsi, ICCID: profile.ICCID, SPN: profile.SPN, GID1: profile.GID1, GID2: profile.GID2})
 
+	if cfg.MatchError != nil {
+		return PreparedSession{}, cfg.MatchError
+	}
+	if cfg.Preset.Blocked {
+		return PreparedSession{}, carrier.NewVoWiFiBlockedMCCError(mcc)
+	}
 	prepared := PreparedSession{
-		Profile: profile,
+		CarrierPreset: cfg.Preset,
+		Profile:       profile,
 		EffectiveCarrier: EffectiveCarrierInfo{
-			MCC:      mcc,
-			MNC:      mnc,
-			PresetID: cfg.PresetID,
+			MCC:         mcc,
+			MNC:         mnc,
+			PresetID:    cfg.PresetID,
+			MatchSource: cfg.MatchSource,
 		},
 		IdentityIMEISource: "profile",
 	}

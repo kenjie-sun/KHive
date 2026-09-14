@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useSettingsStore } from '../stores/settings'
 import PageHeader from '../components/PageHeader.vue'
+import NotificationDeliveries from '../components/NotificationDeliveries.vue'
 import FieldRow from '../components/FieldRow.vue'
 import { 
   Key24Regular, 
@@ -834,6 +835,7 @@ onBeforeUnmount(() => {
                 </div>
               </el-tab-pane>
             </el-tabs>
+            <NotificationDeliveries />
          </div>
       </div>
     </div>

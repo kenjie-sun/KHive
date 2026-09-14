@@ -136,6 +136,7 @@ func main() {
 	if err := db.Init(dbPath); err != nil {
 		log.Fatalf("初始化数据库失败: %v", err)
 	}
+	notify.ConfigureSMSOutbox(cfg)
 	dbResolvedPath := dbPath
 	if absPath, err := filepath.Abs(dbPath); err == nil {
 		dbResolvedPath = absPath

@@ -36,7 +36,11 @@ const (
 )
 
 type SubmitOptions struct {
-	Encoding SMSEncoding
+	Encoding            SMSEncoding
+	RequestStatusReport bool
+	// Hooks are host persistence boundaries used by AT transport; never serialized.
+	BeforeSubmit func(parts int) error
+	OnSubmitted  func(partNo, reference int) error
 }
 
 func NormalizeSMSEncoding(raw string) (SMSEncoding, error) {
@@ -427,6 +431,9 @@ func BuildSubmitTPDUsWithOptions(to, text string, opts SubmitOptions) ([][]byte,
 	var lenList []int
 
 	for _, pdu := range tpdus {
+		if opts.RequestStatusReport {
+			pdu.FirstOctet |= 0x20
+		}
 		// 修复短号码地址类型：库默认将所有号码设为 TonInternational (0x91)，
 		// 但运营商短号码（如 888、10086）应使用 TonUnknown (0x81)
 		if IsShortCode(normalizedTo) {

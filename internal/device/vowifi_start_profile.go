@@ -71,7 +71,15 @@ func (p *Pool) buildVoWiFiStartProfile(worker *Worker, traceID string) (identity
 		"mnc", mnc,
 		"imei", imei)
 
-	return buildVoWiFiRawProfile(imsi, mcc, mnc, imei, smsc), nil
+	profile := buildVoWiFiRawProfile(imsi, mcc, mnc, imei, smsc)
+	// Never apply cached SIM selectors from a different, recently replaced card.
+	if strings.TrimSpace(status.IMSI) == imsi {
+		profile.ICCID = iccid
+		profile.SPN = strings.TrimSpace(status.NativeSPN)
+		profile.GID1 = strings.TrimSpace(status.GID1)
+		profile.GID2 = strings.TrimSpace(status.GID2)
+	}
+	return profile, nil
 }
 
 func buildVoWiFiRawProfile(imsi, mcc, mnc, imei, smsc string) identity.Profile {

@@ -52,6 +52,11 @@ func reloadSIMSequence(ctx context.Context, execute func(string, time.Duration) 
 		}
 		resp, err := execute("AT+CPIN?", 2*time.Second)
 		if online && err == nil && strings.TrimSpace(resp) == "+CPIN: READY" {
+			// CFUN reinitialization may reset CNMI after VoWiFi teardown
+			// already restored it. Restore it while the AT sequence is held.
+			if _, err := configureSMSReports(execute); err != nil {
+				return fmt.Errorf("SIM SMS indications restore: %w", err)
+			}
 			return nil
 		}
 		timer := time.NewTimer(200 * time.Millisecond)

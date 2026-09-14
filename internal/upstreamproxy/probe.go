@@ -28,6 +28,7 @@ const (
 	ProbeStageTCPConnect   = "tcp_connect"
 	ProbeStageHandshake    = "socks5_handshake"
 	ProbeStageUDPAssociate = "udp_associate"
+	ProbeStageUDPExchange  = "udp_exchange"
 	ProbeStageOK           = "ok"
 )
 
@@ -36,6 +37,8 @@ type ProbeConfig struct {
 	Username  string
 	Password  string
 	Timeout   time.Duration
+	// DNSAddr is the UDP probe target. Empty uses 1.1.1.1:53.
+	DNSAddr string
 }
 
 type ProbeResult struct {
@@ -44,6 +47,9 @@ type ProbeResult struct {
 	Reachable      bool   `json:"reachable"`
 	HandshakeOK    bool   `json:"handshake_ok"`
 	UDPAssociateOK bool   `json:"udp_associate_ok"`
+	UDPExchangeOK  bool   `json:"udp_exchange_ok"`
+	DNSTarget      string `json:"dns_target,omitempty"`
+	DNSRCode       int    `json:"dns_rcode"`
 	AuthMethod     string `json:"auth_method,omitempty"`
 	RelayAddr      string `json:"relay_addr,omitempty"`
 	DurationMS     int64  `json:"duration_ms"`
@@ -53,7 +59,7 @@ type ProbeResult struct {
 }
 
 func (r ProbeResult) OK() bool {
-	return r.Reachable && r.HandshakeOK && r.UDPAssociateOK
+	return r.Reachable && r.HandshakeOK && r.UDPAssociateOK && r.UDPExchangeOK
 }
 
 func (r ProbeResult) FailureSummary() string {
@@ -89,6 +95,8 @@ func ProbeSOCKS5(ctx context.Context, cfg ProbeConfig) (ProbeResult, error) {
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
 
 	dialer := &net.Dialer{Timeout: timeout}
 	conn, err := dialer.DialContext(ctx, "tcp", result.ProxyAddr)
@@ -97,6 +105,8 @@ func ProbeSOCKS5(ctx context.Context, cfg ProbeConfig) (ProbeResult, error) {
 		return finalizeProbeResult(result, startedAt), err
 	}
 	defer conn.Close()
+	stopClose := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopClose()
 
 	result.Reachable = true
 	if err := conn.SetDeadline(probeDeadline(ctx, timeout)); err != nil {
@@ -114,15 +124,26 @@ func ProbeSOCKS5(ctx context.Context, cfg ProbeConfig) (ProbeResult, error) {
 	result.HandshakeOK = true
 	result.AuthMethod = socks5AuthMethodName(selectedMethod)
 
-	relayAddr, err := probeUDPAssociate(conn)
+	relayAddr, err := probeUDPAssociate(conn, ctx)
 	if err != nil {
 		result.Error = err.Error()
 		return finalizeProbeResult(result, startedAt), err
 	}
 
-	result.Stage = ProbeStageOK
 	result.UDPAssociateOK = true
 	result.RelayAddr = relayAddr.String()
+	result.Stage = ProbeStageUDPExchange
+	result.DNSTarget = strings.TrimSpace(cfg.DNSAddr)
+	if result.DNSTarget == "" {
+		result.DNSTarget = "1.1.1.1:53"
+	}
+	result.DNSRCode, err = probeDNSRoundTrip(ctx, conn, relayAddr, result.DNSTarget)
+	if err != nil {
+		result.Error = err.Error()
+		return finalizeProbeResult(result, startedAt), err
+	}
+	result.UDPExchangeOK = true
+	result.Stage = ProbeStageOK
 	return finalizeProbeResult(result, startedAt), nil
 }
 
@@ -137,12 +158,16 @@ func annotateProbeResult(result *ProbeResult) {
 		return
 	}
 	if result.OK() {
-		result.Diagnosis = "代理支持标准 SOCKS5 UDP Associate"
+		result.Diagnosis = "SOCKS5 协商及真实 UDP DNS 往返通过"
+		result.Hint = "此结果仅验证探测目标的 UDP 往返，ePDG、IKE 和 IMS 仍需各自验证"
 		return
 	}
 
 	errText := strings.ToLower(strings.TrimSpace(result.Error))
 	switch result.Stage {
+	case ProbeStageUDPExchange:
+		result.Diagnosis = "UDP 协商成功，但未收到有效的探测应答"
+		result.Hint = "检查节点 UDP 转发、路由、防火墙及探测 DNS 目标可达性；此结果不单独判定代理故障"
 	case ProbeStageTCPConnect:
 		result.Diagnosis = "无法与代理建立 TCP 连接"
 		switch {
@@ -270,7 +295,7 @@ func probeUserPasswordAuth(conn io.ReadWriter, username, password string) error 
 	return nil
 }
 
-func probeUDPAssociate(conn net.Conn) (*net.UDPAddr, error) {
+func probeUDPAssociate(conn net.Conn, contexts ...context.Context) (*net.UDPAddr, error) {
 	req := buildProbeUDPAssociateRequest(probeUDPAssociateClientIP(conn))
 	if _, err := conn.Write(req); err != nil {
 		return nil, fmt.Errorf("socks5 UDP ASSOCIATE 请求发送失败: %w", err)
@@ -280,14 +305,14 @@ func probeUDPAssociate(conn net.Conn) (*net.UDPAddr, error) {
 	if _, err := io.ReadFull(conn, header); err != nil {
 		return nil, fmt.Errorf("socks5 UDP ASSOCIATE 响应解析失败: 读取响应头失败: %w", err)
 	}
-	if header[0] != socks5Version {
+	if header[0] != socks5Version || header[2] != 0 {
 		return nil, fmt.Errorf("socks5 UDP ASSOCIATE 响应版本不匹配: 0x%02x", header[0])
 	}
 	if header[1] != socks5ReplySuccess {
 		return nil, fmt.Errorf("socks5 UDP ASSOCIATE 被拒绝: 状态码 0x%02x", header[1])
 	}
 
-	ip, err := readProbeReplyIP(conn, header[3])
+	ip, err := readProbeReplyIP(conn, header[3], contexts...)
 	if err != nil {
 		return nil, fmt.Errorf("socks5 UDP ASSOCIATE 响应解析失败: %w", err)
 	}
@@ -333,7 +358,7 @@ func buildProbeUDPAssociateRequest(ip net.IP) []byte {
 	return req
 }
 
-func readProbeReplyIP(r io.Reader, atyp byte) (net.IP, error) {
+func readProbeReplyIP(r io.Reader, atyp byte, contexts ...context.Context) (net.IP, error) {
 	switch atyp {
 	case socks5AtypIPv4:
 		buf := make([]byte, 4)
@@ -356,7 +381,23 @@ func readProbeReplyIP(r io.Reader, atyp byte) (net.IP, error) {
 		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, fmt.Errorf("读取域名失败: %w", err)
 		}
-		return net.IP(buf), nil
+		ctx := context.Background()
+		if len(contexts) > 0 && contexts[0] != nil {
+			ctx = contexts[0]
+		}
+		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		if len(buf) == 0 {
+			return nil, fmt.Errorf("empty UDP relay hostname")
+		}
+		ips, err := net.DefaultResolver.LookupIPAddr(ctx, string(buf))
+		if err != nil {
+			return nil, fmt.Errorf("resolve UDP relay hostname: %w", err)
+		}
+		if len(ips) == 0 {
+			return nil, fmt.Errorf("UDP relay hostname has no address")
+		}
+		return ips[0].IP, nil
 	default:
 		return nil, fmt.Errorf("未知地址类型: 0x%02x", atyp)
 	}

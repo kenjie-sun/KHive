@@ -13,12 +13,12 @@ func DefaultSecurityClientMechanisms() []IPSec3GPPSecurityMechanism {
 	}
 }
 
-// DefaultGiffgaffTemplate matches extracted preset giffgaff_23410.yaml and the
-// embedded author binary carrier registry.
-func DefaultGiffgaffTemplate() IMSRegisterTemplate {
+// DefaultIMSRegisterTemplate supplies the shared IMS REGISTER protocol defaults.
+// Its ID describes this protocol template, not the SIM carrier or selected preset.
+func DefaultIMSRegisterTemplate() IMSRegisterTemplate {
 	mechanisms := DefaultSecurityClientMechanisms()
 	return IMSRegisterTemplate{
-		ID:                       "giffgaff",
+		ID:                       "default-ims-register",
 		SecAgreeMode:             "auto",
 		IncludePANIAuthenticated: true,
 		StrictSecurityServerOffer: true,

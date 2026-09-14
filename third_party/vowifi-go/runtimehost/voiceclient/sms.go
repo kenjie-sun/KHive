@@ -75,12 +75,20 @@ func (c *Client) SendSMS(ctx context.Context, peer, content string, parts []mess
 		}
 		req.AppendHeader(sip.NewHeader("Call-ID", uuid.NewString()))
 		req.AppendHeader(sip.NewHeader("Content-Type", smsContentType))
-		req.SetBody(part.Body)
+
 		if store != nil {
 			if err := store.UpsertSMSDeliveryPart(messageID, i+1, req.CallID().Value(), int(part.RPMR), "pending", now); err != nil {
 				return out, fmt.Errorf("voiceclient: UpsertSMSDeliveryPart: %w", err)
 			}
 		}
+		body := part.Body
+		if preparer, ok := store.(messaging.TerminalSubmitPreparer); ok {
+			body, err = preparer.PrepareSMSTerminalSubmit(messageID, i+1, body)
+			if err != nil {
+				return out, fmt.Errorf("voiceclient: prepare terminal report: %w", err)
+			}
+		}
+		req.SetBody(body)
 		requests[i] = req
 	}
 	for i, req := range requests {

@@ -84,9 +84,9 @@ def main():
 
     version = json.loads(texts.get('web/package.json', '{}')).get('version')
     lock = json.loads(texts.get('web/package-lock.json', '{}'))
-    if version != '1.0.0' or lock.get('version') != version or lock.get('packages', {}).get('', {}).get('version') != version:
+    if version != '1.0.1' or lock.get('version') != version or lock.get('packages', {}).get('', {}).get('version') != version:
         errors.append(('web/package.json', 'release version mismatch'))
-    if 'VERSION ?= v1.0.0' not in texts.get('Makefile', '') or 'Version = "v1.0.0"' not in texts.get('internal/global/version.go', ''):
+    if 'VERSION ?= v1.0.1' not in texts.get('Makefile', '') or 'Version = "v1.0.1"' not in texts.get('internal/global/version.go', ''):
         errors.append(('Makefile', 'backend release version mismatch'))
     template = texts.get('config/config.example.yaml', '')
     if 'CHANGE_ME_BEFORE_START' not in template or '127.0.0.1:8788' not in template or 'devices: []' not in template:

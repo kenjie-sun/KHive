@@ -21,7 +21,7 @@ make deps
 make build-amd64 UPX=
 ```
 
-版本默认 `v1.0.0`。需要制作开发构建时显式传入自己的版本，例如 `make build-amd64 VERSION=v1.0.0-local UPX=`。版本和 UTC 构建时间经链接参数写入程序；`-trimpath` 避免嵌入本机源码绝对路径，`-buildvcs=false` 避免注入工作树状态。
+版本默认 `v1.0.1`。需要制作开发构建时显式传入自己的版本，例如 `make build-amd64 VERSION=v1.0.1-local UPX=`。版本和 UTC 构建时间经链接参数写入程序；`-trimpath` 避免嵌入本机源码绝对路径，`-buildvcs=false` 避免注入工作树状态。
 
 前端构建由 `scripts/sync-web-dist.mjs` 同步到嵌入目录，最终程序不依赖运行期 Node.js。不要直接把 `web/dist` 或 `internal/web/dist` 提交到 Git。
 
@@ -56,6 +56,8 @@ sudo -E python3 scripts/check-stability.py --local
 ```sh
 python3 scripts/check-stability.py --ssh linux-test-host
 ```
+
+可通过 `--checks db,notify,upstreamproxy,carrier,identity,modem,device,api,e911` 选择需要重跑的包；省略时执行脚本中全部已选定检查。
 
 脚本输出每项结果和 `output/stability/` 下的汇总，结束后清理测试程序。隔离失败时直接停止，不回退到宿主网络。它是指定范围的回归，不代表全仓测试全绿或真实运营商兼容性验收。不要在正在管理实际模组的环境中随意执行未经检查的整仓测试。
 

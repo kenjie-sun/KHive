@@ -1681,6 +1681,7 @@ func (p *Pool) startAllSynchronousLegacy() error {
 				p.handleSIMStatusEvent(w.ID, "at_urc", inserted, state)
 			})
 			m.SetPDUCallback(w.persistIncomingPDUHex)
+			m.SetSMSReportCallbackFactory(w.snapshotSMSReportCallback)
 			m.SetSMSCallback(func(sender, content string, timestamp time.Time) {
 				w.processSMS(sender, content, timestamp)
 			})

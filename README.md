@@ -17,7 +17,7 @@ KHive 是运行于 Linux 的蜂窝通信管理系统。它将设备状态、每�
 | 短信中心 | 收发短信、中文长短信分段与持久化重组、联系人、会话历史和发送状态 |
 | VoWiFi／IMS | 经宽带网络建立运营商 IMS 短信与 USSD 通路，管理注册、保活和连接恢复 |
 | USSD | 查询、交互输入与会话取消，具体能力取决于设备后端和运营商 |
-| 通知 | Telegram、Webhook、Bark、Email、PushPlus、飞书和 QQ 等渠道 |
+| 通知 | Telegram、Webhook、Bark、Email、PushPlus、飞书和 QQ 等渠道；短信通知持久队列、退避重试与失败重排 |
 | 网络与代理 | 蜂窝数据管理、SOCKS5／HTTP 代理实例、按设备网卡绑定出站及流量展示 |
 | 管理接口 | 账户登录、配置管理、AT 交互、运行日志与 REST API |
 
@@ -60,7 +60,7 @@ macOS 可以交叉编译 Linux 程序；完整后端依赖 Linux 网络能力，
 ## 从源码编译
 
 ```sh
-git clone --branch v1.0.0 --depth 1 https://github.com/kenjie-sun/KHive.git
+git clone --branch v1.0.1 --depth 1 https://github.com/kenjie-sun/KHive.git
 cd KHive
 make deps
 make build-amd64 UPX=
@@ -69,7 +69,7 @@ make build-amd64 UPX=
 生成文件：
 
 ```text
-dist/khive_v1.0.0_linux_amd64
+dist/khive_v1.0.1_linux_amd64
 ```
 
 `make deps` 安装并校验 Go 依赖，使用 npm 锁文件安装前端依赖。构建会执行前端类型检查、生成页面并嵌入 Go 程序。`UPX=` 关闭可选压缩，不需要安装 UPX。
@@ -81,7 +81,7 @@ make build-arm64 UPX=
 make build-armv7 UPX=
 ```
 
-产物分别位于 `dist/khive_v1.0.0_linux_arm64` 和 `dist/khive_v1.0.0_linux_armv7`。交叉编译成功不代表对应硬件已通过实机验收。
+产物分别位于 `dist/khive_v1.0.1_linux_arm64` 和 `dist/khive_v1.0.1_linux_armv7`。交叉编译成功不代表对应硬件已通过实机验收。
 
 ## 首次运行
 
@@ -89,7 +89,7 @@ make build-armv7 UPX=
 
 ```sh
 install -d -m 700 runtime/config
-install -m 755 dist/khive_v1.0.0_linux_amd64 runtime/khive
+install -m 755 dist/khive_v1.0.1_linux_amd64 runtime/khive
 install -m 600 config/config.example.yaml runtime/config/config.yaml
 cd runtime
 vi config/config.yaml

@@ -4,11 +4,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"net"
 	"net/smtp"
 	"strings"
+	"time"
 
 	"github.com/1239t/vohive/internal/config"
-	"github.com/1239t/vohive/pkg/logger"
 )
 
 type EmailChannel struct {
@@ -42,57 +43,58 @@ func (c *EmailChannel) SendWithContext(ctx NotificationContext) error {
 	to := strings.Join(c.cfg.ToAddresses, ",")
 	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s\r\n", c.cfg.FromAddress, to, subject, ctx.Text))
 
+	// Bound the complete SMTP conversation so one stalled server cannot keep
+	// its durable channel worker occupied indefinitely.
+	connection, err := net.DialTimeout("tcp", addr, 15*time.Second)
+	if err != nil {
+		return err
+	}
+	defer connection.Close()
+	_ = connection.SetDeadline(time.Now().Add(60 * time.Second))
 	if c.cfg.UseSSL {
-		tlsconfig := &tls.Config{
-			ServerName: c.cfg.SMTPHost,
-		}
-		conn, err := tls.Dial("tcp", addr, tlsconfig)
-		if err != nil {
-			logger.Warn("邮件 SSL/TLS 连接失败", "err", err, "host", c.cfg.SMTPHost)
+		secured := tls.Client(connection, &tls.Config{ServerName: c.cfg.SMTPHost})
+		if err := secured.Handshake(); err != nil {
 			return err
 		}
-		defer conn.Close()
-
-		client, err := smtp.NewClient(conn, c.cfg.SMTPHost)
-		if err != nil {
-			logger.Warn("创建 SMTP 客户端失败", "err", err)
-			return err
-		}
-		defer client.Close()
-
-		if ok, _ := client.Extension("AUTH"); ok {
-			if err = client.Auth(auth); err != nil {
-				logger.Warn("SMTP 认证失败", "err", err)
+		connection = secured
+	}
+	client, err := smtp.NewClient(connection, c.cfg.SMTPHost)
+	if err != nil {
+		return err
+	}
+	defer client.Close()
+	if !c.cfg.UseSSL {
+		if ok, _ := client.Extension("STARTTLS"); ok {
+			if err := client.StartTLS(&tls.Config{ServerName: c.cfg.SMTPHost}); err != nil {
 				return err
 			}
 		}
-
-		if err = client.Mail(c.cfg.FromAddress); err != nil {
-			return err
-		}
-		for _, a := range c.cfg.ToAddresses {
-			if err = client.Rcpt(a); err != nil {
-				return err
-			}
-		}
-		w, err := client.Data()
-		if err != nil {
-			return err
-		}
-		if _, err = w.Write(msg); err != nil {
-			return err
-		}
-		if err = w.Close(); err != nil {
-			return err
-		}
-		client.Quit()
-	} else {
-		err := smtp.SendMail(addr, auth, c.cfg.FromAddress, c.cfg.ToAddresses, msg)
-		if err != nil {
-			logger.Warn("邮件发送失败", "err", err, "host", c.cfg.SMTPHost)
+	}
+	if ok, _ := client.Extension("AUTH"); ok {
+		if err := client.Auth(auth); err != nil {
 			return err
 		}
 	}
+	if err := client.Mail(c.cfg.FromAddress); err != nil {
+		return err
+	}
+	for _, recipient := range c.cfg.ToAddresses {
+		if err := client.Rcpt(recipient); err != nil {
+			return err
+		}
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return err
+	}
+	if _, err := writer.Write(msg); err != nil {
+		_ = writer.Close()
+		return err
+	}
+	if err := writer.Close(); err != nil {
+		return err
+	}
+	_ = client.Quit()
 
 	return nil
 }

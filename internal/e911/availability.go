@@ -13,10 +13,11 @@ func SetupAvailable(status modem.DeviceStatus) bool {
 		return false
 	}
 	cfg := carrier.ResolveEffectiveCarrierConfig(carrier.EffectiveCarrierConfigInput{
-		MCC: mcc,
-		MNC: mnc,
+		MCC:  mcc,
+		MNC:  mnc,
+		IMSI: status.IMSI, ICCID: status.ICCID, SPN: status.NativeSPN, GID1: status.GID1, GID2: status.GID2,
 	})
-	return cfg.E911.Enabled
+	return cfg.MatchError == nil && cfg.E911.Enabled
 }
 
 func nativePLMN(status modem.DeviceStatus) (string, string) {

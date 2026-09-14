@@ -51,9 +51,13 @@ func (c *Coordinator) StartWebsheet(ctx context.Context, deviceID string) (websh
 
 	mcc, mnc := nativePLMN(status)
 	cfg := carrier.ResolveEffectiveCarrierConfig(carrier.EffectiveCarrierConfigInput{
-		MCC: mcc,
-		MNC: mnc,
+		MCC:  mcc,
+		MNC:  mnc,
+		IMSI: status.IMSI, ICCID: status.ICCID, SPN: status.NativeSPN, GID1: status.GID1, GID2: status.GID2,
 	})
+	if cfg.MatchError != nil {
+		return websheet.Info{}, cfg.MatchError
+	}
 	if !cfg.E911.Enabled || strings.TrimSpace(cfg.E911.Provider) == "" {
 		return websheet.Info{}, ErrProviderUnavailable
 	}

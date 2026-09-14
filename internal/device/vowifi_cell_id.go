@@ -25,10 +25,10 @@ func waitVoWiFiServingCellID(ctx context.Context, w *Worker, timeout time.Durati
 	})
 }
 
-func resolveVoWiFiIMSUTRANCellID(ctx context.Context, w *Worker, mcc, mnc string) (suffix, source string) {
-	switch carrier.IMSCellIDMode(mcc, mnc) {
+func resolveVoWiFiIMSUTRANCellID(ctx context.Context, w *Worker, mcc, mnc string, selected ...carrier.Preset) (suffix, source string) {
+	switch carrier.IMSCellIDMode(mcc, mnc, selected...) {
 	case "carrier_only":
-		if suffix = carrier.DefaultUTRANCellIDSuffix(mcc, mnc); suffix != "" {
+		if suffix = carrier.DefaultUTRANCellIDSuffix(mcc, mnc, selected...); suffix != "" {
 			return suffix, "carrier_default"
 		}
 		return "", ""
@@ -38,7 +38,7 @@ func resolveVoWiFiIMSUTRANCellID(ctx context.Context, w *Worker, mcc, mnc string
 	if suffix = resolveVoWiFiIMSUTRANCellIDFromQMI(ctx, w); suffix != "" {
 		return suffix, "qmi"
 	}
-	if suffix = carrier.DefaultUTRANCellIDSuffix(mcc, mnc); suffix != "" {
+	if suffix = carrier.DefaultUTRANCellIDSuffix(mcc, mnc, selected...); suffix != "" {
 		return suffix, "carrier_default"
 	}
 	return "", ""

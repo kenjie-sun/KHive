@@ -18,6 +18,8 @@ import (
 
 // Preset is a single PLMN override entry in the external carrier_overrides file.
 type Preset struct {
+	Match            *Match `json:"match,omitempty"`
+	Priority         int    `json:"priority,omitempty"`
 	ID               string `json:"id"`
 	MCC              string `json:"mcc"`
 	MNC              string `json:"mnc"`
@@ -40,17 +42,21 @@ type Preset struct {
 	// IMSPcscfAddr optionally overrides the IKE-discovered P-CSCF ("host:port").
 	// Useful when ePDG assigns a silent node but a known-good P-CSCF responds.
 	IMSPcscfAddr string `json:"ims_pcscf_addr,omitempty"`
-	E911Enabled      bool   `json:"e911_enabled,omitempty"`
-	E911Provider     string `json:"e911_provider,omitempty"`
-	Blocked          bool   `json:"blocked,omitempty"`
+	E911Enabled  bool   `json:"e911_enabled,omitempty"`
+	E911Provider string `json:"e911_provider,omitempty"`
+	Blocked      bool   `json:"blocked,omitempty"`
 }
 
 type EffectiveCarrierConfigInput struct {
-	MCC string
-	MNC string
+	IMSI, ICCID, SPN, GID1, GID2 string
+	MCC                          string
+	MNC                          string
 }
 
 type EffectiveCarrierConfig struct {
+	Preset           Preset
+	MatchSource      string
+	MatchError       error
 	PresetID         string
 	EPDGAddr         string
 	AKAAppPreference string
@@ -67,8 +73,9 @@ type LoadResult struct {
 }
 
 var (
-	mu      sync.RWMutex
-	presets = map[string]Preset{}
+	mu              sync.RWMutex
+	presets         = map[string]Preset{}
+	matchingPresets []Preset
 )
 
 // builtinDefaults ships known e911/ePDG exceptions that every build should
@@ -134,23 +141,38 @@ func LoadCarrierOverrides(path string) (*LoadResult, error) {
 	}
 
 	next := make(map[string]Preset, len(loaded))
+	var rules []Preset
+	ids := map[string]bool{}
 	for _, p := range loaded {
 		if strings.TrimSpace(p.MCC) == "" || strings.TrimSpace(p.MNC) == "" {
 			continue
 		}
-		next[plmnKey(p.MCC, p.MNC)] = p
+		if err := p.Match.validate(); err != nil {
+			return &LoadResult{Path: path}, fmt.Errorf("carrier rule %q: %w", p.ID, err)
+		}
+		if p.Match != nil {
+			if strings.TrimSpace(p.ID) == "" || ids[p.ID] {
+				return &LoadResult{Path: path}, fmt.Errorf("carrier SIM rules require unique IDs")
+			}
+			ids[p.ID] = true
+			rules = append(rules, p)
+		} else {
+			next[plmnKey(p.MCC, p.MNC)] = p
+		}
 	}
 
 	mu.Lock()
 	presets = next
+	matchingPresets = rules
 	mu.Unlock()
 
-	return &LoadResult{Path: path, Count: len(next)}, nil
+	return &LoadResult{Path: path, Count: len(next) + len(rules)}, nil
 }
 
 func ClearCarrierOverrides() {
 	mu.Lock()
 	presets = map[string]Preset{}
+	matchingPresets = nil
 	mu.Unlock()
 }
 
@@ -187,7 +209,10 @@ func allEntries() map[string]Preset {
 // zero-value config (PresetID "3gpp-default") when nothing overrides it.
 func ResolveEffectiveCarrierConfig(input EffectiveCarrierConfigInput) EffectiveCarrierConfig {
 	cfg := EffectiveCarrierConfig{PresetID: "3gpp-default"}
-	preset, ok := lookup(input.MCC, input.MNC)
+	preset, ok, source, err := resolvePreset(input)
+	cfg.MatchSource = source
+	cfg.MatchError = err
+	cfg.Preset = preset
 	if !ok {
 		return cfg
 	}

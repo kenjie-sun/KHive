@@ -2,6 +2,8 @@ package device
 
 import (
 	"errors"
+	"fmt"
+	"github.com/1239t/vohive/pkg/smscodec"
 	"time"
 
 	"github.com/1239t/vohive/internal/db"
@@ -10,6 +12,13 @@ import (
 )
 
 type vowifiDeliveryStore struct{ pool *Pool }
+
+// SMSDeliveryReader exposes durable delivery history even with IMS stopped.
+type SMSDeliveryReader struct{}
+
+func (SMSDeliveryReader) GetSMSDeliveryStatus(id string) (*messaging.DeliveryStatus, error) {
+	return (vowifiDeliveryStore{}).GetSMSDeliveryStatus(id)
+}
 
 func (vowifiDeliveryStore) CreateSMSDelivery(messageID, imsi, deviceID, peer, content string, partsTotal int, at time.Time) error {
 	return db.CreateSMSDelivery(messageID, imsi, deviceID, peer, content, partsTotal, at)
@@ -66,7 +75,8 @@ func (vowifiDeliveryStore) GetSMSDeliveryStatus(messageID string) (*messaging.De
 	}
 	for _, p := range status.Parts {
 		out.Parts = append(out.Parts, messaging.DeliveryPartStatus{
-			PartNo:      p.PartNo,
+			PartNo: p.PartNo,
+			TPMR:   p.TPMR, TPStatus: p.TPStatus, TerminalState: p.TerminalState, TerminalReportAt: p.TerminalReportAt,
 			CallID:      p.CallID,
 			InReplyTo:   p.InReplyTo,
 			RPMR:        p.RPMR,
@@ -81,5 +91,21 @@ func (vowifiDeliveryStore) GetSMSDeliveryStatus(messageID string) (*messaging.De
 			UpdatedAt:   p.UpdatedAt,
 		})
 	}
+	return out, nil
+}
+
+func (vowifiDeliveryStore) PrepareSMSTerminalSubmit(messageID string, partNo int, body []byte) ([]byte, error) {
+	_, _, _, raw, err := smscodec.ParseRPDataWithAddresses(body)
+	if err != nil || len(raw) < 2 || raw[0]&3 != 1 {
+		return nil, fmt.Errorf("invalid SUBMIT TPDU")
+	}
+	mr, err := db.ReserveSMSTerminalReference(messageID, partNo)
+	if err != nil {
+		return nil, err
+	}
+	out := append([]byte(nil), body...)
+	offset := len(body) - len(raw)
+	out[offset] |= 0x20 // TP-SRR
+	out[offset+1] = mr
 	return out, nil
 }

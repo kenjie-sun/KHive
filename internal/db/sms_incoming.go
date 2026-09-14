@@ -30,12 +30,12 @@ type SMSIncomingPart struct {
 }
 
 type IncomingSMSFragment struct {
-	IMSI, DeviceID, Sender, LocalPhone, Content string
-	TPDU                                        []byte
-	FingerprintInput                            []byte
-	Timestamp                                   time.Time
-	Ref, RefBits, Total, Seq, DCS               int
-	Suppress                                    bool
+	IMSI, DeviceID, Sender, LocalPhone, Content, Source string
+	TPDU                                                []byte
+	FingerprintInput                                    []byte
+	Timestamp                                           time.Time
+	Ref, RefBits, Total, Seq, DCS                       int
+	Suppress                                            bool
 }
 type IncomingSMSResult struct {
 	Stored, Duplicate, Pending bool
@@ -162,6 +162,9 @@ func StoreIncomingSMS(ctx context.Context, in IncomingSMSFragment) (IncomingSMSR
 			if err := upsertSMSContactFromSMS(tx, &sms); err != nil {
 				return err
 			}
+		}
+		if err := enqueueSMSNotifications(tx, sms, in.DeviceID, in.Source); err != nil {
+			return err
 		}
 		out.Stored = true
 		out.SMS = sms

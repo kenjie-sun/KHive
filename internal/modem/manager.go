@@ -109,13 +109,15 @@ type Manager struct {
 	infoMu sync.RWMutex
 
 	// 回调
-	smsCallback            SMSCallback
-	pduCallback            func(string) error
-	newSMSHandler          func(index string) // 处理新短信索引的回调 (用于 bubble up URC)
-	disableURCRead         bool               // 如果启用 QMI，禁用 AT 自动读取
-	simStatusHandler       func(inserted *bool, state string)
-	onDisconnect           func() // 串口掉线回调 (通知 Pool 触发重连)
-	onDisconnectWithReason func(reason string)
+	smsCallback              SMSCallback
+	pduCallback              func(string) error
+	smsReportCallbackFactory func() func(string) error
+	directReportFrame        directSMSReportFrame
+	newSMSHandler            func(index string) // 处理新短信索引的回调 (用于 bubble up URC)
+	disableURCRead           bool               // 如果启用 QMI，禁用 AT 自动读取
+	simStatusHandler         func(inserted *bool, state string)
+	onDisconnect             func() // 串口掉线回调 (通知 Pool 触发重连)
+	onDisconnectWithReason   func(reason string)
 
 	// CS 来电回调
 	ringCallback    func()              // RING URC 回调
@@ -655,6 +657,9 @@ func (m *Manager) runLoop() {
 				m.notifyDisconnect("serial_read_error")
 				return
 			}
+			if m.consumeDirectSMSReportLine(msg.Data) {
+				continue
+			}
 			if m.isURC(msg.Data) {
 				m.handleURC(msg.Data)
 			}
@@ -704,6 +709,9 @@ RespLoop:
 			}
 
 			line := msg.Data
+			if m.consumeDirectSMSReportLine(line) {
+				continue
+			}
 
 			if req.finishOnRDY && req.cmd == "AT+CFUN=1" && line == "RDY" {
 				m.handleURC(line)
@@ -766,7 +774,7 @@ RespLoop:
 				isPureAsyncURC := func(s string) bool {
 					key := urcKey(s)
 					switch key {
-					case "+CUSD", "+CMTI", "RING", "+CLIP", "+QSIMSTAT", "+QSTKURC", "+QPCMV":
+					case "+CUSD", "+CMTI", "+CDSI", "RING", "+CLIP", "+QSIMSTAT", "+QSTKURC", "+QPCMV":
 						return true
 					}
 					return false
@@ -916,14 +924,18 @@ func (m *Manager) initModem() {
 	initCmds := []string{
 		"ATE0",              // 关闭回显
 		"AT+CMGF=0",         // PDU 模式
-		"AT+CNMI=2,1,0,0,0", // 新短信上报 +CMTI
+		"AT+CNMI=2,1,0,1,0", // 优先直接 +CDS，按固件能力回退
 		"AT+CLIP=1",         // 启用来电号码显示 (+CLIP URC)
 		"AT+QPCMV=1,2",      // 开启 UAC 语音模式 (PCM → ALSA 桥接必须)
 	}
 
 	for _, cmd := range initCmds {
 		// 这些初始化命令使用 ExecuteATSilent 降低日志噪音，避免用户误解全在走 AT
-		m.ExecuteATSilent(cmd, 2*time.Second)
+		if cmd == "AT+CNMI=2,1,0,1,0" {
+			m.ConfigureSMSReports()
+		} else {
+			m.ExecuteATSilent(cmd, 2*time.Second)
+		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
@@ -1420,7 +1432,7 @@ func (m *Manager) handleURC(line string) {
 		}
 	}
 
-	if fr.Key == "+CMTI" && fr.CMTIIndex != "" {
+	if (fr.Key == "+CMTI" || fr.Key == "+CDSI") && fr.CMTIIndex != "" {
 		index := fr.CMTIIndex
 		storage := fr.CMTIStorage
 		m.infoMu.RLock()
@@ -2050,6 +2062,27 @@ func (m *Manager) SendSMSWithOptions(phone, message string, opts smscodec.Submit
 		return fmt.Errorf("构建 PDU 失败: %w", err)
 	}
 
+	if opts.BeforeSubmit != nil {
+		// Use the same negotiated route after initialization, SIM reload and sending.
+		mode, configureErr := configureSMSReports(func(cmd string, timeout time.Duration) (string, error) {
+			return m.executeAT(cmd, timeout, true, true)
+		})
+		if configureErr != nil {
+			return fmt.Errorf("配置短信上报失败: %w", configureErr)
+		}
+		if mode == smsReportsDisabled {
+			logger.Warn("模组不支持短信状态报告，本次发送不追踪终端回执", "device", m.cfg.ID)
+			opts.RequestStatusReport = false
+			opts.BeforeSubmit = nil
+			opts.OnSubmitted = nil
+			pduHexList, tpduLenList, err = m.buildSMSPDUsWithOptions(phone, message, opts)
+			if err != nil {
+				return err
+			}
+		} else if err := opts.BeforeSubmit(len(pduHexList)); err != nil {
+			return err
+		}
+	}
 	for i, pduHex := range pduHexList {
 		tpduLen := tpduLenList[i]
 		logger.Debug(fmt.Sprintf("[%s] PDU 编码完成 (分片 %d/%d)", m.cfg.ID, i+1, len(pduHexList)), "pdu", pduHex, "tpdu_len", tpduLen)
@@ -2077,6 +2110,15 @@ func (m *Manager) SendSMSWithOptions(phone, message string, opts smscodec.Submit
 		case resp := <-req.respChan:
 			if !strings.Contains(resp, "OK") && !strings.Contains(resp, "+CMGS:") {
 				return fmt.Errorf("发送分片 %d 失败: %s", i+1, resp)
+			}
+			if opts.OnSubmitted != nil {
+				reference, err := parseCMGSReference(resp)
+				if err != nil {
+					return err
+				}
+				if err := opts.OnSubmitted(i+1, reference); err != nil {
+					return fmt.Errorf("短信已提交但回执关联保存失败: %w", err)
+				}
 			}
 		case err := <-req.errChan:
 			return fmt.Errorf("发送分片 %d 失败: %w", i+1, err)
@@ -2338,4 +2380,18 @@ func (m *Manager) QueryUSBAudioMode() (bool, int, error) {
 		fmt.Sscanf(strings.TrimSpace(parts[1]), "%d", &mode)
 	}
 	return enabled, mode, nil
+}
+
+func parseCMGSReference(response string) (int, error) {
+	for _, line := range strings.Split(response, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "+CMGS:") {
+			fields := strings.Split(strings.TrimSpace(strings.TrimPrefix(line, "+CMGS:")), ",")
+			n, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+			if err == nil && n >= 0 && n <= 255 {
+				return n, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("短信已提交但模组未返回有效 +CMGS 引用号")
 }

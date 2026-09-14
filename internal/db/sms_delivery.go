@@ -44,20 +44,24 @@ func (SMSDelivery) TableName() string { return "sms_delivery" }
 
 // SMSDeliveryPart 记录一条上行短信分片(part 级别)的发送与回执状态。
 type SMSDeliveryPart struct {
-	ID        uint       `gorm:"primaryKey" json:"id"`
-	MessageID string     `gorm:"column:message_id;index:idx_sms_delivery_part_mid_no,priority:1;uniqueIndex:uidx_sms_delivery_part_mid_no,priority:1;index" json:"message_id"`
-	PartNo    int        `gorm:"column:part_no;index:idx_sms_delivery_part_mid_no,priority:2;uniqueIndex:uidx_sms_delivery_part_mid_no,priority:2" json:"part_no"`
-	CallID    string     `gorm:"column:call_id;index" json:"call_id"`
-	InReplyTo string     `gorm:"column:in_reply_to;index" json:"in_reply_to"`
-	RPMR      int        `gorm:"column:rp_mr;index" json:"rp_mr"`
-	State     string     `gorm:"column:state;index" json:"state"`
-	SIPCode   int        `gorm:"column:sip_code" json:"sip_code"`
-	RPCause   int        `gorm:"column:rp_cause" json:"rp_cause"`
-	ErrorText string     `gorm:"column:error_text" json:"error_text"`
-	SentAt    time.Time  `gorm:"column:sent_at;index" json:"sent_at"`
-	ReportAt  *time.Time `gorm:"column:report_at;index" json:"report_at,omitempty"`
-	CreatedAt time.Time  `gorm:"column:created_at" json:"created_at"`
-	UpdatedAt time.Time  `gorm:"column:updated_at" json:"updated_at"`
+	TPMR             *int       `gorm:"column:tp_mr;index" json:"tp_mr,omitempty"`
+	TPStatus         *int       `gorm:"column:tp_status" json:"tp_status,omitempty"`
+	TerminalState    string     `json:"terminal_state"`
+	TerminalReportAt *time.Time `json:"terminal_report_at,omitempty"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	MessageID        string     `gorm:"column:message_id;index:idx_sms_delivery_part_mid_no,priority:1;uniqueIndex:uidx_sms_delivery_part_mid_no,priority:1;index" json:"message_id"`
+	PartNo           int        `gorm:"column:part_no;index:idx_sms_delivery_part_mid_no,priority:2;uniqueIndex:uidx_sms_delivery_part_mid_no,priority:2" json:"part_no"`
+	CallID           string     `gorm:"column:call_id;index" json:"call_id"`
+	InReplyTo        string     `gorm:"column:in_reply_to;index" json:"in_reply_to"`
+	RPMR             int        `gorm:"column:rp_mr;index" json:"rp_mr"`
+	State            string     `gorm:"column:state;index" json:"state"`
+	SIPCode          int        `gorm:"column:sip_code" json:"sip_code"`
+	RPCause          int        `gorm:"column:rp_cause" json:"rp_cause"`
+	ErrorText        string     `gorm:"column:error_text" json:"error_text"`
+	SentAt           time.Time  `gorm:"column:sent_at;index" json:"sent_at"`
+	ReportAt         *time.Time `gorm:"column:report_at;index" json:"report_at,omitempty"`
+	CreatedAt        time.Time  `gorm:"column:created_at" json:"created_at"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at" json:"updated_at"`
 }
 
 func (SMSDeliveryPart) TableName() string { return "sms_delivery_part" }
